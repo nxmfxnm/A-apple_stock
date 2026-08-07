@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Apple Stock Interactive Dashboard</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f5f5f7;
+      margin: 0;
+      padding: 20px;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      min-height: 100vh;
+    }
+    
+    .dashboard-container {
+      background: #ffffff;
+      border-radius: 20px;
+      padding: 24px;
+      width: 100%;
+      max-width: 1400px;
+      box-shadow: 0 8px 30px rgba(0,0,0,0.08);
+    }
+    
+    .header {
+      margin-bottom: 20px;
+      text-align: center;
+    }
+    h1 { font-size: 22px; color: #1d1d1f; margin: 0 0 6px 0; }
+    p.sub { color: #86868b; font-size: 13px; margin: 0 0 14px 0; }
+
+    .event-bar {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .event-chip {
+      background: #f2f2f7;
+      border: 1px solid #d1d1d6;
+      border-radius: 18px;
+      padding: 6px 14px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #1d1d1f;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .event-chip:hover { background: #e5e5ea; }
+    .event-chip.active {
+      background: #0071e3;
+      color: #ffffff;
+      border-color: #0071e3;
+    }
+    .event-chip.reset-btn {
+      background: #fff0f0;
+      color: #d62828;
+      border-color: #ffcccc;
+    }
+
+    /* Layout จัดระเบียบใหม่: ด้านบนเป็น 2 กราฟ + 1 Side Panel */
+    .top-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+
+    @media (max-width: 700px) {
+      .top-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .chart-box {
+      background: #fafafa;
+      border: 1px solid #e5e5e7;
+      border-radius: 16px;
+      padding: 16px;
+    }
+
+    /* Side Panel ฝั่งขวา */
+    .side-panel {
+      background: #1d1d1f;
+      color: #ffffff;
+      border-radius: 16px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      min-height: 320px;
+    }
+    .side-panel h3 { margin: 0 0 12px 0; font-size: 15px; color: #2997ff; border-bottom: 1px solid #333; padding-bottom: 8px; }
+    .side-panel .metric { margin-bottom: 14px; }
+    .side-panel .metric-label { font-size: 11px; color: #86868b; text-transform: uppercase; }
+    .side-panel .metric-value { font-size: 20px; font-weight: 700; color: #f5f5f7; margin-top: 2px; }
+    .side-panel .desc-box { background: rgba(255,255,255,0.08); border-radius: 8px; padding: 10px; font-size: 12px; line-height: 1.5; color: #d2d2d7; }
+
+    /* กราฟฤดูกาลด้านล่าง */
+    .seasonality-box {
+      background: #fafafa;
+      border: 1px solid #e5e5e7;
+      border-radius: 16px;
+      padding: 20px;
+      width: 100%;
+    }
+    
+    .chart-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .chart-label { font-weight: 600; font-size: 14px; color: #1d1d1f; }
+    
+    .toggle-group { display: flex; gap: 6px; }
+    .toggle-btn {
+      background: #e5e5ea;
+      border: none;
+      border-radius: 10px;
+      padding: 5px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      color: #1d1d1f;
+    }
+    .toggle-btn.active { background: #5856d6; color: #ffffff; }
+
+    svg { width: 100%; height: auto; overflow: visible; display: block; }
+    .grid line { stroke: #e5e5e5; stroke-opacity: 0.8; }
+    .grid path { stroke-width: 0; }
+    .axis-label { font-size: 11px; fill: #1d1d1f; font-weight: 600; }
+
+    /* Annotations & Sync Line */
+    .annotation-line { stroke: #e63946; stroke-width: 1.5px; stroke-dasharray: 3 3; }
+    .annotation-circle { fill: #e63946; stroke: #fff; stroke-width: 2px; cursor: pointer; }
+    .annotation-text { font-size: 11px; font-weight: 600; fill: #d62828; cursor: pointer; }
+
+    .sync-pointer-line {
+      stroke: #1d1d1f;
+      stroke-width: 1.5px;
+      stroke-dasharray: 3 3;
+      pointer-events: none;
+    }
+    
+  </style>
+</head>
+<body>
+  <div id="tooltip"></div>
+  <div class="dashboard-container">
+    <div class="header">
+      <h1>Apple Stock Price, Volume & Seasonality Dashboard</h1>
+      <p class="sub">ขยาย/เลื่อนกราฟเพื่อดูข้อมูลในอดีตได้ และคลิกจุด/แท่งบนกราฟเพื่อแสดงรายละเอียด</p>
+      
+      <div class="event-bar">
+        <button class="event-chip" onclick="selectEvent('2020-03')">🦠 COVID-19 Demand (03/2020)</button>
+        <button class="event-chip" onclick="selectEvent('2020-08')">✂️ Stock Split 4-for-1 (08/2020)</button>
+        <button class="event-chip" onclick="selectEvent('2020-11')">📱 M1 & iPhone 12 (11/2020)</button>
+        <button class="event-chip" onclick="selectEvent('2023-06')">🥽 Vision Pro & $3T (06/2023)</button>
+        <button class="event-chip reset-btn" onclick="resetView()">🔄 รีเซ็ตมุมมอง</button>
+      </div>
+    </div>
+    
+    <!-- แถวบน: 2 กราฟ + 1 Detail Panel -->
+    <div class="top-grid">
+      <div class="chart-box">
+        <div class="chart-label">📈 Stock Price History ($)</div>
+        <svg id="lineChart"></svg>
+      </div>
+
+      <div class="chart-box">
+        <div class="chart-label">📊 Monthly Trading Volume</div>
+        <svg id="volumeChart"></svg>
+      </div>
+
+    </div>
+
+    <!-- แถวล่าง: กราฟ Seasonality แสดงเต็มความกว้าง -->
+    <div class="seasonality-box">
+      <div class="chart-header">
+        <div class="chart-label">🗓️ Seasonal Monthly Average (พฤติกรรมเฉลี่ยแยกรายเดือน)</div>
+        <div class="toggle-group">
+          <button class="toggle-btn active" id="btnSeasonPrice" onclick="toggleSeasonMetric('price')">เฉลี่ยราคา ($)</button>
+          <button class="toggle-btn" id="btnSeasonVol" onclick="toggleSeasonMetric('volume')">เฉลี่ย Volume</button>
+        </div>
+      </div>
+      <svg id="seasonChart"></svg>
+    </div>
+  </div>
+
+  <script>
+    const width = 480;
+    const height = 300; 
+    const margin = { top: 25, right: 20, bottom: 40, left: 55 };
+
+    const innerWidth = width - margin.left - margin.right;
+    const innerHeight = height - margin.top - margin.bottom;
+
+    const widthSeason = 1200;
+    const heightSeason = 220;
+    const innerWidthSeason = widthSeason - margin.left - margin.right;
+    const innerHeightSeason = heightSeason - margin.top - margin.bottom;
+
+    const svgLine = d3.select("#lineChart").attr("viewBox", `0 0 ${width} ${height}`);
+    const chartLine = svgLine.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+
+    const svgBar = d3.select("#volumeChart").attr("viewBox", `0 0 ${width} ${height}`);
+    const chartBar = svgBar.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+
+    const svgSeason = d3.select("#seasonChart").attr("viewBox", `0 0 ${widthSeason} ${heightSeason}`);
+    const chartSeason = svgSeason.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+    const tooltip = d3.select("#tooltip")
+    .style("position","absolute")
+    .style("background","#222")
+    .style("color","#fff")
+    .style("padding","8px")
+    .style("border-radius","6px")
+    .style("font-size","12px")
+    .style("pointer-events","none")
+    .style("opacity",0);
+
+    const events = [
+      { id: "2020-03", date: "2020-03", title: "COVID-19 Demand", desc: "ช่วง WFH ความต้องการ Mac และ iPad พุ่งสูงขึ้นอย่างก้าวกระโดด", dy: -15, dx: -20 },
+      { id: "2020-08", date: "2020-08", title: "4-for-1 Split", desc: "Apple ประกาศแตกหุ้น 4 ต่อ 1 เพื่อเพิ่มสภาพคล่องตลาด", dy: -35, dx: -25 },
+      { id: "2020-11", date: "2020-11", title: "M1 & iPhone 12", desc: "เปิดตัวชิป Apple Silicon M1 และ iPhone 12 5G", dy: -55, dx: 25 },
+      { id: "2023-06", date: "2023-06", title: "Vision Pro & $3T", desc: "เปิดตัว Vision Pro และมูลค่าตลาดทะลุ 3 ล้านล้านดอลลาร์", dy: -25, dx: -30 }
+    ];
+
+    let selectEventFn = null;
+    let resetViewFn = null;
+    let toggleSeasonMetric = null;
+
+    // โหลดไฟล์ CSV หากหาไม่เจอจะสลับใช้ Mock Data ทันที
+    d3.csv("data/apple_stock_monthly.csv").then(rawData => {
+      processAndDraw(rawData);
+    }).catch(() => {
+      console.warn("ไม่พบไฟล์ CSV ระบบรันด้วย Mock Data สำรอง");
+      processAndDraw(generateMockData());
+    });
+
+    function generateMockData() {
+      const mock = [];
+      let basePrice = 70;
+      let date = new Date(2020, 0, 1);
+      for (let i = 0; i < 48; i++) {
+        basePrice += (Math.random() - 0.42) * 6;
+        mock.push({
+          Year_Month: d3.timeFormat("%Y-%m")(date),
+          Avg_Close: Math.max(50, basePrice),
+          Total_Volume: Math.floor(Math.random() * 2000000000) + 1000000000
+        });
+        date.setMonth(date.getMonth() + 1);
+      }
+      return mock;
+    }
+
+    function processAndDraw(rawData) {
+      const parseDate = d3.timeParse("%Y-%m");
+      const cleanData = rawData.map(d => {
+        const dt = parseDate(d.Year_Month) || new Date(d.Year_Month);
+        return {
+          Year_Month: dt,
+          Month_Index: dt.getMonth(),
+          Avg_Close: +d.Avg_Close,
+          Total_Volume: +d.Total_Volume
+        };
+      }).filter(d => d.Year_Month && !isNaN(d.Avg_Close));
+
+      cleanData.sort((a, b) => a.Year_Month - b.Year_Month);
+      drawDashboard(cleanData);
+    }
+
+    function drawDashboard(data) {
+      const parseDate = d3.timeParse("%Y-%m");
+      const formatMonth = d3.timeFormat("%Y-%m");
+      const monthNames = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
+
+      const monthlyStats = d3.range(0, 12).map(mIdx => {
+        const monthData = data.filter(d => d.Month_Index === mIdx);
+        return {
+          monthIndex: mIdx,
+          monthName: monthNames[mIdx],
+          avgPrice: d3.mean(monthData, d => d.Avg_Close) || 0,
+          avgVolume: d3.mean(monthData, d => d.Total_Volume) || 0
+        };
+      });
+      function showTooltip(event,d){
+
+          tooltip
+            .style("opacity",1)
+            .html(`
+            <b>${d3.timeFormat("%B %Y")(d.Year_Month)}</b><br>
+            Price : $${d.Avg_Close.toFixed(2)}<br>
+            Volume : ${d3.format(",")(d.Total_Volume)}
+            `)
+            .style("left",(event.pageX+15)+"px")
+            .style("top",(event.pageY-20)+"px");
+      }
+
+      function hideTooltip(){
+          tooltip.style("opacity",0);
+      }
+      // SCALES
+      const xBase = d3.scaleTime().domain(d3.extent(data, d => d.Year_Month)).range([0, innerWidth]);
+      const yLine = d3.scaleLinear().domain([0, d3.max(data, d => d.Avg_Close) * 1.08]).nice().range([innerHeight, 0]);
+
+      const maxVolume = d3.quantile(data.map(d => d.Total_Volume).sort(d3.ascending), 0.98) || d3.max(data, d => d.Total_Volume);
+      const yBar = d3.scaleLinear().domain([0, maxVolume]).range([innerHeight, 0]);
+
+      let currentXScale = xBase;
+
+      // AXES
+      const xAxisLine = chartLine.append("g").attr("transform", `translate(0,${innerHeight})`).call(d3.axisBottom(xBase).ticks(5).tickFormat(d3.timeFormat("%Y")));
+      chartLine.append("g").call(d3.axisLeft(yLine).ticks(5).tickFormat(d => `$${d}`));
+
+      const xAxisBar = chartBar.append("g").attr("transform", `translate(0,${innerHeight})`).call(d3.axisBottom(xBase).ticks(5).tickFormat(d3.timeFormat("%Y")));
+      chartBar.append("g").call(d3.axisLeft(yBar).ticks(5).tickFormat(d3.format(".1s")));
+
+      // GRIDS
+      const gridXLine = chartLine.append("g").attr("class", "grid").attr("transform", `translate(0,${innerHeight})`).call(d3.axisBottom(xBase).ticks(5).tickSize(-innerHeight).tickFormat(""));
+      chartLine.append("g").attr("class", "grid").call(d3.axisLeft(yLine).ticks(5).tickSize(-innerWidth).tickFormat(""));
+
+      const gridXBar = chartBar.append("g").attr("class", "grid").attr("transform", `translate(0,${innerHeight})`).call(d3.axisBottom(xBase).ticks(5).tickSize(-innerHeight).tickFormat(""));
+      chartBar.append("g").attr("class", "grid").call(d3.axisLeft(yBar).ticks(5).tickSize(-innerWidth).tickFormat(""));
+
+      // CLIPPING
+      chartLine.append("clipPath").attr("id", "clip-line").append("rect").attr("width", innerWidth).attr("height", innerHeight);
+      chartBar.append("clipPath").attr("id", "clip-bar").append("rect").attr("width", innerWidth).attr("height", innerHeight);
+
+      const bodyLine = chartLine.append("g").attr("clip-path", "url(#clip-line)");
+      const bodyBar = chartBar.append("g").attr("clip-path", "url(#clip-bar)");
+
+      // LINE CHART & ANIMATION
+      const lineGen = d3.line().x(d => xBase(d.Year_Month)).y(d => yLine(d.Avg_Close)).curve(d3.curveMonotoneX);
+      const path = bodyLine.append("path").datum(data).attr("fill", "none").attr("stroke", "#0071e3").attr("stroke-width", 2.2).attr("d", lineGen);
+
+      const totalLength = path.node().getTotalLength();
+      path.attr("stroke-dasharray", totalLength + " " + totalLength)
+          .attr("stroke-dashoffset", totalLength)
+          .transition().duration(1500).ease(d3.easeCubicOut)
+          .attr("stroke-dashoffset", 0);
+
+      const dots = bodyLine.selectAll(".dot").data(data).enter().append("circle")
+        .attr("class", "dot")
+        .attr("cx", d => xBase(d.Year_Month)).attr("cy", d => yLine(d.Avg_Close)).attr("r", 0).attr("fill", "#0071e3").style("cursor", "pointer");
+
+      dots.transition().delay((d, i) => i * 2).duration(300).attr("r", 2.5);
+
+      // ANNOTATIONS
+      const annotationGroup = bodyLine.append("g").attr("class", "annotations").style("opacity", 0);
+      events.forEach(event => {
+        const targetDate = parseDate(event.date);
+        const matchedData = data.find(d => d.Year_Month.getTime() === targetDate?.getTime());
+
+        if (matchedData) {
+          const cx = xBase(matchedData.Year_Month);
+          const cy = yLine(matchedData.Avg_Close);
+
+          annotationGroup.append("line").attr("class", "annotation-line").attr("data-id", event.id)
+            .attr("x1", cx).attr("y1", cy).attr("x2", cx + event.dx).attr("y2", cy + event.dy);
+
+          annotationGroup.append("circle").attr("class", "annotation-circle").attr("data-id", event.id)
+            .attr("cx", cx).attr("cy", cy).attr("r", 4);
+
+          annotationGroup.append("text").attr("class", "annotation-text").attr("data-id", event.id)
+            .attr("x", cx + event.dx).attr("y", cy + event.dy - 3).attr("text-anchor", "middle").text(event.title);
+        }
+      });
+      annotationGroup.transition().delay(1400).duration(400).style("opacity", 1);
+
+      // BAR CHART & ANIMATION
+      let barW = Math.max(1, (innerWidth / data.length) - 0.5);
+      const bars = bodyBar.selectAll(".bar").data(data).enter().append("rect")
+        .attr("class", "bar")
+        .attr("x", d => xBase(d.Year_Month) - barW / 2).attr("width", barW)
+        .attr("y", innerHeight).attr("height", 0)
+        .attr("fill", "#34c759").attr("opacity", 0.75).style("cursor", "pointer");
+
+      bars.transition().duration(800).delay((d, i) => i * 2).ease(d3.easeCubicOut)
+        .attr("y", d => yBar(Math.min(d.Total_Volume, maxVolume)))
+        .attr("height", d => innerHeight - yBar(Math.min(d.Total_Volume, maxVolume)));
+
+      // SEASONALITY CHART (ด้านล่าง)
+      const xSeason = d3.scaleBand().domain(monthlyStats.map(d => d.monthName)).range([0, innerWidthSeason]).padding(0.35);
+      const ySeasonPrice = d3.scaleLinear().domain([0, d3.max(monthlyStats, d => d.avgPrice) * 1.15]).nice().range([innerHeightSeason, 0]);
+      const ySeasonVol = d3.scaleLinear().domain([0, d3.max(monthlyStats, d => d.avgVolume) * 1.15]).nice().range([innerHeightSeason, 0]);
+
+      chartSeason.append("g").attr("transform", `translate(0,${innerHeightSeason})`).call(d3.axisBottom(xSeason));
+      const yAxisSeason = chartSeason.append("g").call(d3.axisLeft(ySeasonPrice).ticks(4).tickFormat(d => `$${d}`));
+
+      const seasonBars = chartSeason.selectAll(".season-bar")
+        .data(monthlyStats).enter().append("rect")
+        .attr("class", "season-bar")
+        .attr("x", d => xSeason(d.monthName)).attr("width", xSeason.bandwidth())
+        .attr("y", innerHeightSeason).attr("height", 0)
+        .attr("fill", "#5856d6").attr("rx", 4).attr("opacity", 0.85).style("cursor", "pointer");
+
+      seasonBars.transition().duration(700).delay((d, i) => i * 25)
+        .attr("y", d => ySeasonPrice(d.avgPrice))
+        .attr("height", d => innerHeightSeason - ySeasonPrice(d.avgPrice));
+
+      const seasonLabels = chartSeason.selectAll(".season-label")
+        .data(monthlyStats).enter().append("text")
+        .attr("class", "season-label")
+        .attr("x", d => xSeason(d.monthName) + xSeason.bandwidth() / 2)
+        .attr("y", d => ySeasonPrice(d.avgPrice) - 5)
+        .attr("text-anchor", "middle").attr("font-size", "10px").attr("font-weight", "bold").attr("fill", "#5856d6")
+        .text(d => `$${d.avgPrice.toFixed(1)}`);
+
+      toggleSeasonMetric = (metric) => {
+        d3.select("#btnSeasonPrice").classed("active", metric === 'price');
+        d3.select("#btnSeasonVol").classed("active", metric === 'volume');
+
+        if (metric === 'price') {
+          yAxisSeason.transition().duration(400).call(d3.axisLeft(ySeasonPrice).ticks(4).tickFormat(d => `$${d}`));
+          seasonBars.transition().duration(400).attr("y", d => ySeasonPrice(d.avgPrice)).attr("height", d => innerHeightSeason - ySeasonPrice(d.avgPrice)).attr("fill", "#5856d6");
+          seasonLabels.transition().duration(400).attr("y", d => ySeasonPrice(d.avgPrice) - 5).attr("fill", "#5856d6").text(d => `$${d.avgPrice.toFixed(1)}`);
+        } else {
+          yAxisSeason.transition().duration(400).call(d3.axisLeft(ySeasonVol).ticks(4).tickFormat(d3.format(".1s")));
+          seasonBars.transition().duration(400).attr("y", d => ySeasonVol(d.avgVolume)).attr("height", d => innerHeightSeason - ySeasonVol(d.avgVolume)).attr("fill", "#ff9500");
+          seasonLabels.transition().duration(400).attr("y", d => ySeasonVol(d.avgVolume) - 5).attr("fill", "#ff9500").text(d => d3.format(".2s")(d.avgVolume));
+        }
+      };
+
+      // UPDATE SIDE PANEL (คลิกแล้วขึ้นข้อมูลฝั่งขวา)
+      function updateSidePanel(dateStr, price, volume, extraDesc = "") {
+        d3.select("#panelDateValue").text(dateStr);
+        d3.select("#panelPriceValue").text(typeof price === 'number' ? `$${price.toFixed(2)}` : price);
+        d3.select("#panelVolumeValue").text(typeof volume === 'number' ? d3.format(",")(volume) : volume);
+        if (extraDesc) {
+          d3.select("#panelDesc").html(`🎯 <b>Event Insight:</b> ${extraDesc}`);
+        } else {
+          d3.select("#panelDesc").html(`📊 ข้อมูลสรุปประจำเดือน <b>${dateStr}</b> แสดงราคาปิดเฉลี่ยและปริมาณการซื้อขายสุทธิ`);
+        }
+      }
+
+      function highlightMonth(date){
+
+        dots.attr("r",x=>
+            x.Year_Month.getTime()==date.getTime()?6:2.5
+        );
+
+        bars.attr("fill",x=>
+            x.Year_Month.getTime()==date.getTime()
+            ?"#ff3b30"
+            :"#34c759"
+        );
+
+        seasonBars.attr("fill",x=>
+            x.monthIndex==date.getMonth()
+            ?"#ff9500"
+            :"#5856d6"
+        );
+
+}
+
+      const onPointClick = (e, d) => {
+        highlightMonth(d.Year_Month);
+        const fullDate = d3.timeFormat("%B %Y")(d.Year_Month);
+        updateSidePanel(fullDate, d.Avg_Close, d.Total_Volume);
+        
+        dots.attr("stroke", "none");
+        d3.select(e.currentTarget).attr("stroke", "#1d1d1f").attr("stroke-width", 3);
+      };
+
+      dots
+      .on("mouseover",showTooltip)
+      .on("mousemove",showTooltip)
+      .on("mouseout",hideTooltip)
+      .on("click",onPointClick);
+      bars
+      .on("mouseover",showTooltip)
+      .on("mousemove",showTooltip)
+      .on("mouseout",hideTooltip)
+      .on("click",onPointClick);
+
+      seasonBars
+
+.on("mouseover",(event,d)=>{
+
+    tooltip
+        .style("opacity",1)
+        .html(`
+        <b>${d.monthName}</b><br>
+        Avg Price : $${d.avgPrice.toFixed(2)}<br>
+        Avg Volume : ${d3.format(".2s")(d.avgVolume)}
+        `)
+        .style("left",(event.pageX+15)+"px")
+        .style("top",(event.pageY-20)+"px");
+
+    })
+
+    .on("mousemove",(event)=>{
+        tooltip
+        .style("left",(event.pageX+15)+"px")
+        .style("top",(event.pageY-20)+"px");
+    })
+
+    .on("mouseout",hideTooltip)
+
+    .on("click",(event,d)=>{
+
+        const selected=data.filter(x=>
+            x.Month_Index==d.monthIndex
+        );
+
+        highlightMonth(selected[0].Year_Month);
+
+        updateSidePanel(
+            d.monthName,
+            d.avgPrice,
+            d.avgVolume
+        );
+
+    });
+
+      // EVENT CLICK HANDLER
+      selectEventFn = (eventId) => {
+        const ev = events.find(e => e.id === eventId);
+        if (!ev) return;
+
+        const evDate = parseDate(ev.date);
+        const matchedData = data.find(d => d.Year_Month.getTime() === evDate?.getTime());
+
+        if (matchedData) {
+          d3.select("#panelDateLabel").text("เหตุการณ์สำคัญ (Event)");
+          updateSidePanel(`${ev.title} (${d3.timeFormat("%b %Y")(evDate)})`, matchedData.Avg_Close, matchedData.Total_Volume, ev.desc);
+        }
+
+        d3.selectAll(".event-chip").classed("active", false);
+        d3.selectAll(".event-chip").filter((d, i, nodes) => nodes[i].textContent.includes(ev.date)).classed("active", true);
+
+        const startDate = new Date(evDate); startDate.setMonth(startDate.getMonth() - 2);
+        const endDate = new Date(evDate); endDate.setMonth(endDate.getMonth() + 2);
+
+        dots.transition().duration(250)
+          .attr("fill", d => formatMonth(d.Year_Month) === ev.date ? "#ff3b30" : (d.Year_Month >= startDate && d.Year_Month <= endDate ? "#ff9500" : "#d1d1d6"))
+          .attr("r", d => formatMonth(d.Year_Month) === ev.date ? 6.5 : (d.Year_Month >= startDate && d.Year_Month <= endDate ? 4 : 2));
+
+        bars.transition().duration(250)
+          .attr("fill", d => (d.Year_Month >= startDate && d.Year_Month <= endDate) ? "#1b8a3e" : "#e5e5ea")
+          .attr("opacity", d => (d.Year_Month >= startDate && d.Year_Month <= endDate) ? 1 : 0.3);
+      };
+
+      // SYNCHRONIZED ZOOM & PAN
+      let isZooming = false;
+      const sharedZoom = d3.zoom()
+        .scaleExtent([1, 10])
+        .translateExtent([[0, 0], [innerWidth, innerHeight]])
+        .extent([[0, 0], [innerWidth, innerHeight]])
+        .on("zoom", (e) => {
+          if (isZooming) return;
+          isZooming = true;
+
+          currentXScale = e.transform.rescaleX(xBase);
+
+          xAxisLine.call(d3.axisBottom(currentXScale).ticks(5).tickFormat(d3.timeFormat("%Y")));
+          gridXLine.call(d3.axisBottom(currentXScale).ticks(5).tickSize(-innerHeight).tickFormat(""));
+
+          xAxisBar.call(d3.axisBottom(currentXScale).ticks(5).tickFormat(d3.timeFormat("%Y")));
+          gridXBar.call(d3.axisBottom(currentXScale).ticks(5).tickSize(-innerHeight).tickFormat(""));
+
+          path.attr("d", d3.line().x(d => currentXScale(d.Year_Month)).y(d => yLine(d.Avg_Close)).curve(d3.curveMonotoneX));
+          dots.attr("cx", d => currentXScale(d.Year_Month));
+
+          annotationGroup.selectAll("line")
+            .attr("x1", (d, i) => currentXScale(parseDate(events[i].date)))
+            .attr("x2", (d, i) => currentXScale(parseDate(events[i].date)) + events[i].dx);
+          annotationGroup.selectAll("circle").attr("cx", (d, i) => currentXScale(parseDate(events[i].date)));
+          annotationGroup.selectAll("text").attr("x", (d, i) => currentXScale(parseDate(events[i].date)) + events[i].dx);
+
+          const newBarW = Math.max(1, (innerWidth / data.length) * e.transform.k - 0.5);
+          bars.attr("x", d => currentXScale(d.Year_Month) - newBarW / 2).attr("width", newBarW);
+
+          if (e.sourceEvent) {
+            if (e.sourceEvent.target.closest("#lineChart")) {
+              svgBar.call(sharedZoom.transform, e.transform);
+            } else if (e.sourceEvent.target.closest("#volumeChart")) {
+              svgLine.call(sharedZoom.transform, e.transform);
+            }
+          }
+          isZooming = false;
+        });
+
+      bodyLine.append("rect").attr("width", innerWidth).attr("height", innerHeight).attr("fill", "none").attr("pointer-events", "all").lower();
+      bodyBar.append("rect").attr("width", innerWidth).attr("height", innerHeight).attr("fill", "none").attr("pointer-events", "all").lower();
+
+      svgLine.call(sharedZoom);
+      svgBar.call(sharedZoom);
+
+      resetViewFn = () => {
+        dots.transition().duration(250).attr("r", 2.5).attr("fill", "#0071e3").attr("stroke", "none");
+        bars.transition().duration(250).attr("fill", "#34c759").attr("opacity", 0.75);
+        d3.selectAll(".event-chip").classed("active", false);
+
+        d3.select("#panelDateLabel").text("ช่วงเวลา / เดือน");
+        d3.select("#panelDateValue").text("คลิกเลือกข้อมูลบนกราฟ");
+        d3.select("#panelPriceValue").text("-");
+        d3.select("#panelVolumeValue").text("-");
+        d3.select("#panelDesc").html("💡 คลิกที่จุดบนกราฟราคา แท่ง Volume หรือปุ่ม Event ด้านบนเพื่อแสดงรายละเอียดตรงนี้");
+
+        svgLine.transition().duration(500).call(sharedZoom.transform, d3.zoomIdentity);
+        svgBar.transition().duration(500).call(sharedZoom.transform, d3.zoomIdentity);
+      };
+
+      annotationGroup.selectAll(".annotation-circle, .annotation-text")
+        .on("click", (e) => {
+          const eventId = d3.select(e.currentTarget).attr("data-id");
+          selectEventFn(eventId);
+        });
+    }
+
+    function selectEvent(eventId) { if (selectEventFn) selectEventFn(eventId); }
+    function resetView() { if (resetViewFn) resetViewFn(); }
+  </script>
+  </div>
+</body>
+</html>
