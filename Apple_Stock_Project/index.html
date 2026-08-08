@@ -319,14 +319,14 @@
       chartLine.append("g").call(d3.axisLeft(yLine).ticks(5).tickFormat(d => `$${d}`));
 
       const xAxisBar = chartBar.append("g").attr("transform", `translate(0,${innerHeight})`).call(d3.axisBottom(xBase).ticks(5).tickFormat(d3.timeFormat("%Y")));
-      chartBar.append("g").call(d3.axisLeft(yBar).ticks(5).tickFormat(d3.format(".1s")));
+      chartBar.append("g").call(d3.axisLeft(yBar).ticks(5).tickFormat(d3.format(".2s")));
 
       // GRIDS
       const gridXLine = chartLine.append("g").attr("class", "grid").attr("transform", `translate(0,${innerHeight})`).call(d3.axisBottom(xBase).ticks(5).tickSize(-innerHeight).tickFormat(""));
       chartLine.append("g").attr("class", "grid").call(d3.axisLeft(yLine).ticks(5).tickSize(-innerWidth).tickFormat(""));
 
       const gridXBar = chartBar.append("g").attr("class", "grid").attr("transform", `translate(0,${innerHeight})`).call(d3.axisBottom(xBase).ticks(5).tickSize(-innerHeight).tickFormat(""));
-      chartBar.append("g").attr("class", "grid").call(d3.axisLeft(yBar).ticks(5).tickSize(-innerWidth).tickFormat("")).selectAll("text").remove();
+      chartBar.append("g").attr("class", "grid").call(d3.axisLeft(yBar).ticks(5).tickSize(-innerWidth).tickFormat(""));
 
       // CLIPPING
       chartLine.append("clipPath").attr("id", "clip-line").append("rect").attr("width", innerWidth).attr("height", innerHeight);
