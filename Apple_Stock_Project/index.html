@@ -326,7 +326,7 @@
       chartLine.append("g").attr("class", "grid").call(d3.axisLeft(yLine).ticks(5).tickSize(-innerWidth).tickFormat(""));
 
       const gridXBar = chartBar.append("g").attr("class", "grid").attr("transform", `translate(0,${innerHeight})`).call(d3.axisBottom(xBase).ticks(5).tickSize(-innerHeight).tickFormat(""));
-      chartBar.append("g").attr("class", "grid").call(d3.axisLeft(yBar).ticks(5).tickSize(-innerWidth).tickFormat(""));
+      chartBar.append("g").attr("class", "grid").call(d3.axisLeft(yBar).ticks(5).tickSize(-innerWidth).tickFormat("")).selectAll("text").remove();
 
       // CLIPPING
       chartLine.append("clipPath").attr("id", "clip-line").append("rect").attr("width", innerWidth).attr("height", innerHeight);
